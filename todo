@@ -1,0 +1,212 @@
+#!/bin/bash
+
+set -e
+
+#Consists of basic features a todolist consists of using mysql dbms and crud operations
+blue=$(tput setaf 4)
+red=$(tput setaf 1)
+green=$(tput setaf 10)
+yellow=$(tput setaf 3)
+reset=$(tput sgr0)
+cyan=$(tput setaf 14)
+orange=${blue}${yellow}
+greensoo=$(tput setaf 48)
+
+table=todolist
+database=tododb
+
+usage(){
+	cat <<EOF
+	${cyan}USAGE : ${green}todolist${reset} [${yellow}options${reset}] [${yellow}keyword${reset}] ${reset}
+		
+${cyan}		OPTIONS	${reset}
+${yellow}		-l ${reset}: List out the todolist 
+${yellow}		-a task ${reset}: Add a new task (no spaces)
+${yellow}	        -d ID|[all] ${reset}: delete a/all task(s) based on id provided
+${yellow}		-u ID ${reset}: Update a record based on id provided 
+${yellow}	 	-h ${reset}: Help
+EOF
+}
+
+listTasks(){
+	result=$(mysql ${database} -u root -e "select * from ${table};")
+	if [[ -n $result ]]; then
+		echo -e "                                     ${green}TODO LIST${reset}"
+		toscreen=$(mysql ${database} -u root -e "select * from ${table};")
+	       	
+		while read -r line; do
+			case $line in
+				*pending*)
+					echo "${yellow}$line${reset}";;
+				*completed*)
+					echo "${green}$line${reset}";;
+					*)
+					echo "$line";;
+			esac
+		done <<< "$toscreen"	
+	else
+		echo -e "${yellow}{{ TodoList Empty }}${reset}"
+		echo -e "     ${yellow}Create task :${reset} ${green}todolist${reset} ${orange}-a${reset} ${cyan}[task]${reset}"
+
+		echo "            ${blue}Ex:${reset} ${green}todolist${reset}${orange} -a${reset}${cyan} submit_math_assignment${reset}"
+
+	fi
+}
+
+addTask(){
+	mysql ${database} -u root -e "insert into ${table} (task,status) values('"$1"','pending');"
+	if [[ $? -eq 0 ]]; then
+		echo "${orange}Added task${reset} ${green}$1${reset} ++"
+	fi
+}
+
+deleteTask(){
+	result=$(mysql ${database} -u root -e "select * from ${table} where id = $1;")
+	if [[ -n $result ]]; then
+		task=$(mysql ${database} -u root -e "select task from ${table} where id = $1;")	
+		read -p "${blue}Are you sure you want to delete${reset} ${green}$1${reset} ${orange}$task${reset} ${yellow}(${reset}${green}y${reset}${blue}|${reset}${red}n${reset}${yellow})${reset} :" choice
+       		if [[ $choice == 'y' ]]; then
+			mysql ${database} -u root -e "delete from ${table} where id = $1"
+			if [[ $? -eq 0 ]]; then
+				echo "${cyan}Deleted task${reset} ${green}$1${reset}."
+			fi
+		elif [[ $choice == 'n' ]]; then
+			echo "${cyan}todoList unchanged${reset}"
+			echo "${cyan}Exiting...${reset}"
+			exit
+		else
+			echo "${red}Enter either${reset}${green}(y)${reset}${blue}or${reset}${red}(n)${reset}"
+			echo "${cyan}Exiting...${reset}"
+		fi
+	else
+		echo "${red}ID $1 not found${reset}"
+		exit
+	fi
+	
+}
+
+updateTask(){
+	result=$(mysql ${database} -u root -e "select * from ${table} where id = $1;")
+	if [[ -n $result ]]; then 
+		task=$(mysql ${database} -u root -e "select task from ${table} where id = $1;")
+		echo -e "${blue}Selected ${green}$task${reset} ${orange}at id${reset}${green} $1${reset}"
+		echo -en "${yellow}Do you want to change the (${cyan}n${reset}${green})ame${reset} ${blue}or${reset} ${yellow}(${reset}${cyan}s${reset}${green})tatus :${reset}"
+		read choice
+		if [[ -n $choice ]] && [[ $choice =~ 'n' ]]; then
+			echo -en "${blue}Enter new name of task :${reset}"
+			read newname
+			mysql ${database} -u root -e "update ${table} set task = '"$newname"' where id = $1;"
+			if [[ $? -eq 0 ]]; then
+				echo -e "${green}Changed task name!${reset} ${cyan}to${reset} ${reset}${orange}$newname${reset}"
+			fi
+		elif [[ -n $choice ]] && [[ $choice =~ 's' ]]; then
+			status=$(mysql ${database} -u root -e "select status from ${table} where id = $1;")
+			if [[ $status =~ 'completed' ]]; then
+				mysql ${database} -u root -e "update ${table} set status = 'pending' where id = $1;"
+				mysql ${database} -u root -e "update ${table} set endDate = 'NULL' where id = $1;"
+				if [[ $? -eq 0 ]]; then
+					echo -e "${cyan}Changed status!${reset}"
+				fi
+			elif [[ $status =~ 'pending' ]]; then
+				mysql ${database} -u root -e "update ${table} set status = 'completed' where id = $1;"			              
+				mysql ${database} -u root -e "update ${table} set endDate = '"$(date | cut -d ' ' -f 1,2,3,4,5 --output-delimiter='_')"' where id = $1;"
+
+				if [[ $? -eq 0 ]]; then
+					echo -e "${cyan}Changed status!${reset}"
+				fi
+			fi
+		else
+			echo -e "${red}Enter valid options!${reset}${orange}(n)ame${reset}${blue}or${reset}${green}(s)tatus${reset}" 
+		fi 
+		
+	else
+		echo "${red}id not found${reset}"
+	fi
+	
+}
+
+if [[ $# -le 2 ]]; then 
+	for arg in "$@"; do
+		case $arg in 
+			-l|--list)
+				if [[ $# -eq 1 ]]; then
+					listTasks
+				else
+					usage
+				fi
+				break
+				;;
+			-a|--add)
+				if [[ $# -eq 2 ]]; then
+					addTask $2
+				elif [[ $# -eq 1 ]]; then
+					echo -e "${red}{{ Requires Task as argument! }}${reset}"
+				       	echo -e "	${orange}Sntax:${reset} ${green}todolist${reset} ${orange}-a [${blue}task${orange}]${reset}"
+				       	echo -e "	${orange}ex:${reset} ${green}todolist${reset} ${orange}-a${reset} ${greensoo}watch_news_@_7${reset}"
+					
+				else	
+					usage
+				fi
+				break
+				;;
+			-d|--delete)
+				if [[ $# -eq 2 ]]; then
+					if [[ $2 =~ [0-9]{1,10} ]]; then
+						deleteTask $2
+					elif [[ $2 =~ 'all' ]]; then
+						echo -en "${yellow}Are you sure you want to delete all tasks?${reset} ${red}(y)es or (n)o :${reset}" 
+						read choice
+						if [[ $choice =~ 'y' ]] || [[ $choice =~ 'yes' ]]; then
+							echo -en "${yellow}To Delete all TASKS type${reset} '${red}YESDELETEALL${reset}' ${yellow}in full${reset} (${red}warning: irreversible action!${reset}) :"
+							read dellall
+							if [[ $dellall =~ 'YESDELETEALL' ]]; then
+								echo -en "${cyan}DELETING all Tasks...${reset}"
+								mysql ${database} -u root -e "truncate table ${table}"
+								if [[ $? -eq 0 ]]; then
+									echo "${cyan}Deleted all tasks!${reset}"
+								fi
+							else
+								echo -e "${red}Incorrect keyphrase!${reset}"
+								echo -e "${cyan}Exiting safely...${reset}"
+							fi
+						else
+							echo -e "${cyan}Exiting safely...${reset}"
+						fi
+					else
+						echo -e "${orange}Delete Syntax${reset} : ${green}todotool${reset} ${orange}-d${reset} ${cyan}ID|[all]${reset}"
+					fi
+						
+				else
+				       	echo -e "${orange}Delete Syntax:${reset} ${green}todolist${reset} ${orange}-d${reset} ${cyan}ID|[all]${reset}"		
+				fi
+				break
+				;;
+			-u|--update)
+				if [[ $# -eq 2 ]] && [[ $2 =~ [0-9]{1,10} ]]; then
+					updateTask $2 
+				else
+					echo "${orange}Update Syntax :${reset} ${green}todolist${reset} ${orange}-u${reset} ${cyan}ID${reset}"
+				fi
+				break
+				;;	
+			-h|--help)
+				usage
+				break
+				;;
+			*)
+				echo -e "${red}Enter valid option!${reset}"
+				echo -e '\n'
+				usage
+				break
+				;;
+		esac
+	done
+	
+	if [[ $# -eq 0 ]]; then
+		usage
+	fi
+
+else
+	usage
+fi
+
